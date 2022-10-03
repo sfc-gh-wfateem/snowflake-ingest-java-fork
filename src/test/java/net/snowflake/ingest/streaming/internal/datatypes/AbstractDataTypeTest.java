@@ -74,7 +74,7 @@ public abstract class AbstractDataTypeTest {
 
   @After
   public void after() throws Exception {
-    conn.createStatement().executeQuery(String.format("drop database %s", databaseName));
+//    conn.createStatement().executeQuery(String.format("drop database %s", databaseName));
     if (client != null) {
       client.close();
     }
@@ -92,7 +92,7 @@ public abstract class AbstractDataTypeTest {
             .replace(')', '_')
             .replace(',', '_');
 
-    //    System.out.printf("Creating table %s.%s.%s%n", databaseName, schemaName, tableName);
+        System.out.printf("Creating table %s.%s.%s%n", databaseName, schemaName, tableName);
     conn.createStatement()
         .execute(
             String.format(

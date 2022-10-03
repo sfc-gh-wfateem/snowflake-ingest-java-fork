@@ -1,6 +1,7 @@
 package net.snowflake.ingest.streaming.internal;
 
 import java.math.BigInteger;
+import net.snowflake.client.jdbc.internal.org.bouncycastle.util.encoders.Hex;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -411,5 +412,111 @@ public class RowBufferStatsTest {
     Assert.assertNull(result.getCurrentMaxRealValue());
     Assert.assertNull(result.getCurrentMinIntValue());
     Assert.assertNull(result.getCurrentMaxIntValue());
+  }
+
+  @Test
+  public void testRowBinaryStats() {
+    RowBufferStats r1 = new RowBufferStats();
+    r1.addBinaryValue(Hex.decode(""));
+    Assert.assertEquals("", r1.getCurrentMinColBinValueAsString());
+    Assert.assertEquals("", r1.getCurrentMaxColBinValueAsString());
+
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(Hex.decode("ff"));
+    r1.addBinaryValue(Hex.decode("00"));
+    Assert.assertEquals("00", r1.getCurrentMinColBinValueAsString());
+    Assert.assertEquals("ff", r1.getCurrentMaxColBinValueAsString());
+
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(Hex.decode("00"));
+    r1.addBinaryValue(Hex.decode("ff"));
+    Assert.assertEquals("00", r1.getCurrentMinColBinValueAsString());
+    Assert.assertEquals("ff", r1.getCurrentMaxColBinValueAsString());
+
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(Hex.decode("00"));
+    r1.addBinaryValue(Hex.decode("0001"));
+    Assert.assertEquals("00", r1.getCurrentMinColBinValueAsString());
+    Assert.assertEquals("0001", r1.getCurrentMaxColBinValueAsString());
+
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(Hex.decode(""));
+    r1.addBinaryValue(Hex.decode("00"));
+    Assert.assertEquals("", r1.getCurrentMinColBinValueAsString());
+    Assert.assertEquals("00", r1.getCurrentMaxColBinValueAsString());
+
+    // Test last byte incrementation
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode("000000000000000000000000000000000000000000000000000000000000000000")); // 66x
+    Assert.assertEquals(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        r1.getCurrentMinColBinValueAsString()); // 64x
+    Assert.assertEquals(
+        "0000000000000000000000000000000000000000000000000000000000000001",
+        r1.getCurrentMaxColBinValueAsString()); // 63x+1x
+
+    // Test multiple overflow
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode("aaffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 2x+64x
+    r1.addBinaryValue(
+        Hex.decode("000000000000000000000000000000000000000000000000000000000000000000")); // 66x
+    Assert.assertEquals(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        r1.getCurrentMinColBinValueAsString());
+    Assert.assertEquals(
+        "ab00000000000000000000000000000000000000000000000000000000000000",
+        r1.getCurrentMaxColBinValueAsString());
+
+    // Test truncation + overflow
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode(
+            "00000000000000000000000000000000000000000000000000000000000000ff00")); // 62x + 2x + 2x
+    Assert.assertEquals(
+        "00000000000000000000000000000000000000000000000000000000000000ff",
+        r1.getCurrentMinColBinValueAsString()); // 64x
+    Assert.assertEquals(
+        "0000000000000000000000000000000000000000000000000000000000000100",
+        r1.getCurrentMaxColBinValueAsString()); // 63x+1x
+
+    // Test max fitting prefix
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 64x
+    Assert.assertEquals(
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        r1.getCurrentMaxColBinValueAsString());
+
+    // Another overflow case
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode(
+            "feffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 1x + 1x + 64x
+    Assert.assertEquals(
+        "ff00000000000000000000000000000000000000000000000000000000000000",
+        r1.getCurrentMaxColBinValueAsString());
+
+
+    // Test total overflow
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 66x
+    r1.addBinaryValue(
+        Hex.decode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 64x
+    Assert.assertEquals("Z", r1.getCurrentMaxColBinValueAsString());
+
+    // Test total overflow reversed
+    r1 = new RowBufferStats();
+    r1.addBinaryValue(
+        Hex.decode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 64x
+    r1.addBinaryValue(
+        Hex.decode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")); // 66x
+    Assert.assertEquals("Z", r1.getCurrentMaxColBinValueAsString());
+  }
+
+  @Test
+  public void testRowBinaryStatsCombined() {
   }
 }

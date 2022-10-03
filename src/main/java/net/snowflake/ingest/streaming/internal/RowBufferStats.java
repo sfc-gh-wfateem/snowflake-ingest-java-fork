@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import net.snowflake.ingest.utils.ErrorCode;
 import net.snowflake.ingest.utils.SFException;
+import org.apache.commons.codec.binary.Hex;
 
 /** Keeps track of the active EP stats, used to generate a file EP info */
 class RowBufferStats {
@@ -295,6 +296,11 @@ class RowBufferStats {
 
   private String currentMinColStrValue;
   private String currentMaxColStrValue;
+
+  private boolean currentMaxBinaryPrefixOverflown;
+  private byte[] currentMinColBinValue;
+  private byte[] currentMaxColBinValue;
+
   private byte[] currentMinColStrValueInBytes;
   private byte[] currentMaxColStrValueInBytes;
   private BigInteger currentMinIntValue;
@@ -308,6 +314,8 @@ class RowBufferStats {
   private final String collationDefinitionString;
 
   private static final int MAX_LOB_LEN = 32;
+
+  private static final String OVERFLOWN_BINARY_PREFIX_EP_VALUE = "Z";
 
   /** Creates empty stats */
   RowBufferStats(String collationDefinitionString) {
@@ -373,6 +381,18 @@ class RowBufferStats {
       combined.addStrValue(right.currentMinColStrValue);
       combined.addStrValue(right.currentMaxColStrValue);
     }
+
+    if (left.currentMinColBinValue != null) {
+      combined.addBinaryValue(left.currentMinColBinValue);
+      combined.addBinaryValue(left.currentMaxColBinValue);
+    }
+
+    if (right.currentMinColBinValue != null) {
+      combined.addBinaryValue(right.currentMinColBinValue);
+      combined.addBinaryValue(right.currentMaxColBinValue);
+    }
+
+    combined.currentMaxBinaryPrefixOverflown = right.currentMaxBinaryPrefixOverflown || left.currentMaxBinaryPrefixOverflown;
 
     if (left.currentMinRealValue != null) {
       combined.addRealValue(left.currentMinRealValue);
@@ -445,12 +465,85 @@ class RowBufferStats {
     }
   }
 
+  void addBinaryValue(byte[] input) {
+    if (input == null) { // TODO is this correct?
+      return;
+    }
+    this.setCurrentMaxLength(input.length);
+    int prefixLength = Math.min(input.length, MAX_LOB_LEN);
+    byte[] prefixBytes = new byte[prefixLength];
+    System.arraycopy(input, 0, prefixBytes, 0, prefixLength);
+    if (currentMinColBinValue == null) {
+      this.currentMinColBinValue = prefixBytes;
+      setBinaryMaxValue(input.length, prefixBytes);
+    } else {
+      if (compare(currentMinColBinValue, prefixBytes) > 0) {
+        this.currentMinColBinValue = prefixBytes;
+      } else if (!currentMaxBinaryPrefixOverflown
+          && compare(currentMaxColBinValue, prefixBytes) <= 0) {
+        setBinaryMaxValue(input.length, prefixBytes);
+      }
+    }
+  }
+
+  /**
+   * For binary arrays, it is not enough to increment the last byte. If the last byte overflows, we
+   * need to propagate the incrementation until the beginning.
+   *
+   * @param b Byte array to prepare
+   * @return Cloned incremented array, original array is not modified
+   */
+  private byte[] incrementedBytes(byte[] b) {
+    byte[] result = b.clone();
+    for (int i = b.length - 1; i >= 0; i--) {
+      result[i]++;
+      if ((result[i] & 0xff) != 0) {
+        return result;
+      }
+    }
+    throw new SFException(
+        ErrorCode.INTERNAL_ERROR, "Cannot increment prefix consisting only of 0xff bytes");
+  }
+
+  /** Checks if the array only consists of bytes 0xff */
+  private boolean isMaxPrefix(byte[] b) {
+    for (byte value : b) {
+      if ((value & 0xff) != 255) return false;
+    }
+    return true;
+  }
+
+  /** Analyzes array prefix and sets the flag if it only contains 0xff bytes. Otherwise it */
+  private void setBinaryMaxValue(int inputLength, byte[] prefix) {
+    if (inputLength > MAX_LOB_LEN) {
+      if (isMaxPrefix(prefix)) {
+        this.currentMaxBinaryPrefixOverflown = true;
+      } else {
+        this.currentMaxColBinValue = incrementedBytes(prefix);
+      }
+    } else {
+      this.currentMaxColBinValue = prefix;
+    }
+  }
+
   String getCurrentMinColStrValue() {
     return currentMinColStrValue;
   }
 
   String getCurrentMaxColStrValue() {
     return currentMaxColStrValue;
+  }
+
+  public String getCurrentMinColBinValueAsString() {
+    return currentMinColBinValue == null ? null : Hex.encodeHexString(currentMinColBinValue);
+  }
+
+  public String getCurrentMaxColBinValueAsString() {
+    if (currentMaxBinaryPrefixOverflown) {
+      return OVERFLOWN_BINARY_PREFIX_EP_VALUE;
+    } else if (currentMaxColBinValue == null) {
+      return null;
+    } else return Hex.encodeHexString(currentMaxColBinValue);
   }
 
   void addIntValue(BigInteger value) {
@@ -543,7 +636,7 @@ class RowBufferStats {
 
     for (int mismatchIdx = 0; mismatchIdx < Math.min(a.length, b.length); mismatchIdx++) {
       if (a[mismatchIdx] != b[mismatchIdx]) {
-        return Byte.compare(a[mismatchIdx], b[mismatchIdx]);
+        return Byte.toUnsignedInt(a[mismatchIdx]) - Byte.toUnsignedInt(b[mismatchIdx]);
       }
     }
 

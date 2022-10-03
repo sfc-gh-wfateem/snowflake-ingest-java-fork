@@ -4,16 +4,6 @@
 
 package net.snowflake.ingest.streaming.internal;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import net.snowflake.client.jdbc.internal.google.common.collect.Sets;
 import net.snowflake.ingest.streaming.OpenChannelRequest;
 import net.snowflake.ingest.utils.Constants;
@@ -44,6 +34,16 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.Text;
 import org.apache.arrow.vector.util.TransferPair;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * The buffer in the Streaming Ingest channel that holds the un-flushed rows, these rows will be
@@ -726,7 +726,7 @@ class ArrowRowBuffer extends AbstractRowBuffer<VectorSchemaRoot> {
                 DataValidationUtil.validateAndParseBinary(
                     value, Optional.ofNullable(maxLengthString).map(Integer::parseInt));
             ((VarBinaryVector) vector).setSafe(curRowIndex, bytes);
-            stats.addStrValue(new String(bytes, StandardCharsets.UTF_8));
+            stats.addBinaryValue(bytes);
             rowBufferSize += bytes.length;
             break;
           case REAL:
