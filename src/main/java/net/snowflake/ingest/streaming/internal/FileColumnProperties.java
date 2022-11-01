@@ -2,7 +2,10 @@ package net.snowflake.ingest.streaming.internal;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import org.apache.commons.codec.binary.Hex;
 
 /** Audit register endpoint/FileColumnPropertyDTO property list. */
 class FileColumnProperties {
@@ -41,6 +44,8 @@ class FileColumnProperties {
   // Default value to use for min/max real when all data in the given column is NULL
   public static final Double DEFAULT_MIN_MAX_REAL_VAL_FOR_EP = 0d;
 
+  private static final int MAX_LOB_LEN = 32;
+
   FileColumnProperties(RowBufferStats stats) {
     this.setCollation(stats.getCollationDefinitionString());
     this.setMaxIntValue(
@@ -61,12 +66,42 @@ class FileColumnProperties {
             : stats.getCurrentMaxRealValue());
     this.setMaxLength(stats.getCurrentMaxLength());
 
-    // Collated and non-collated strings are intentionally equal here as required by Snowflake
-    this.setMaxStrNonCollated(stats.getCurrentMaxColStrValue());
-    this.setMinStrNonCollated(stats.getCurrentMinColStrValue());
+    // current hex-encoded non-collated min value.
+    // If collated or non-collated MIN is > 32 bytes, set to null.
+    // No truncation is happening here.
+    if (stats.getCurrentMinNonColStrValue() != null) {
+      byte[] minNonCollatedBytes =
+          stats.getCurrentMinNonColStrValue().getBytes(StandardCharsets.UTF_8);
+      boolean shouldBeNull =
+          minNonCollatedBytes.length > MAX_LOB_LEN
+              || stats.getCurrentMinColStrValueInBytes().length > MAX_LOB_LEN;
+      this.setMinStrNonCollated(shouldBeNull ? null : Hex.encodeHexString(minNonCollatedBytes));
+    }
 
-    this.setMaxStrValue(stats.getCurrentMaxColStrValue());
-    this.setMinStrValue(stats.getCurrentMinColStrValue());
+    // current hex-encoded non-collated max value.
+    // If collated or non-collated MAX is > 32 bytes, set to null.
+    // No truncation is happening here.
+    if (stats.getCurrentMaxNonColStrValue() != null) {
+      byte[] maxNonCollatedBytes =
+          stats.getCurrentMaxNonColStrValue().getBytes(StandardCharsets.UTF_8);
+      boolean shouldBeNull =
+          maxNonCollatedBytes.length > MAX_LOB_LEN
+              || stats.getCurrentMaxColStrValueInBytes().length > MAX_LOB_LEN;
+      this.setMaxStrNonCollated(shouldBeNull ? null : Hex.encodeHexString(maxNonCollatedBytes));
+    }
+
+    // current hex-encoded collated min value, truncated down to 32 bytes
+    if (stats.getCurrentMinColStrValueInBytes() != null) {
+      String truncatedAsHex = truncateBytesAsHex(stats.getCurrentMinColStrValueInBytes(), false);
+      this.setMinStrValue(truncatedAsHex);
+    }
+
+    // current hex-encoded collated max value, truncated up to 32 bytes
+    if (stats.getCurrentMaxColStrValueInBytes() != null) {
+      String truncatedAsHex = truncateBytesAsHex(stats.getCurrentMaxColStrValueInBytes(), true);
+      this.setMaxStrValue(truncatedAsHex);
+    }
+
     this.setNullCount(stats.getCurrentNullCount());
     this.setDistinctValues(stats.getDistinctValues());
   }
@@ -237,5 +272,28 @@ class FileColumnProperties {
         distinctValues,
         nullCount,
         maxLength);
+  }
+
+  /** XP-compatible string truncation (FdnColDataContainer::Metrics::updateStrMinMax) */
+  static String truncateBytesAsHex(byte[] bytes, boolean truncateUp) {
+    if (bytes.length <= MAX_LOB_LEN) {
+      return Hex.encodeHexString(bytes);
+    }
+
+    // Round the least significant byte(s) up
+    if (truncateUp) {
+      int idx;
+      for (idx = MAX_LOB_LEN - 1; idx >= 0; idx--) {
+        if (++bytes[idx] != 0) {
+          break;
+        }
+      }
+      // Whole prefix overflew, return infinity
+      if (idx == -1) {
+        return "Z";
+      }
+    }
+
+    return Hex.encodeHexString(ByteBuffer.wrap(bytes, 0, MAX_LOB_LEN));
   }
 }
