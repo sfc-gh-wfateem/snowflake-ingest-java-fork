@@ -19,7 +19,6 @@ import net.snowflake.ingest.streaming.OpenChannelRequest;
 import net.snowflake.ingest.utils.ErrorCode;
 import net.snowflake.ingest.utils.Logging;
 import net.snowflake.ingest.utils.SFException;
-import net.snowflake.ingest.utils.Utils;
 import org.apache.arrow.util.VisibleForTesting;
 
 /**
@@ -198,7 +197,7 @@ abstract class AbstractRowBuffer<T> implements RowBuffer<T> {
       Map<String, Object> row, InsertValidationResponse.InsertError error) {
     Map<String, String> inputColNamesMap =
         row.keySet().stream()
-            .collect(Collectors.toMap(AbstractRowBuffer::formatColumnName, value -> value));
+            .collect(Collectors.toMap(LiteralQuoteUtils::unquoteColumnName, value -> value));
 
     // Check for extra columns in the row
     List<String> extraCols = new ArrayList<>();
@@ -425,7 +424,8 @@ abstract class AbstractRowBuffer<T> implements RowBuffer<T> {
     this.rowCount = 0;
     this.bufferSize = 0F;
     this.statsMap.replaceAll(
-        (key, value) -> new RowBufferStats(value.getCollationDefinitionString()));
+        (key, value) ->
+            new RowBufferStats(value.getColumnDisplayName(), value.getCollationDefinitionString()));
   }
 
   /** Get buffered data snapshot for later flushing. */
@@ -436,14 +436,6 @@ abstract class AbstractRowBuffer<T> implements RowBuffer<T> {
 
   @VisibleForTesting
   abstract int getTempRowCount();
-
-  /** Normalize the column name, given with the inserted row, to send to server side. */
-  static String formatColumnName(String columnName) {
-    Utils.assertStringNotNullOrEmpty("invalid column name", columnName);
-    return (columnName.charAt(0) == '"' && columnName.charAt(columnName.length() - 1) == '"')
-        ? columnName
-        : columnName.toUpperCase();
-  }
 
   /**
    * Given a set of col names to stats, build the right ep info
@@ -457,8 +449,7 @@ abstract class AbstractRowBuffer<T> implements RowBuffer<T> {
     for (Map.Entry<String, RowBufferStats> colStat : colStats.entrySet()) {
       RowBufferStats stat = colStat.getValue();
       FileColumnProperties dto = new FileColumnProperties(stat);
-
-      String colName = colStat.getKey();
+      String colName = colStat.getValue().getColumnDisplayName();
       epInfo.getColumnEps().put(colName, dto);
     }
     return epInfo;
