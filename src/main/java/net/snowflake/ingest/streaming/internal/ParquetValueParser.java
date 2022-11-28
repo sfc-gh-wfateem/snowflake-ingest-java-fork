@@ -59,7 +59,8 @@ class ParquetValueParser {
           AbstractRowBuffer.ColumnPhysicalType.valueOf(columnMetadata.getPhysicalType());
       switch (typeName) {
         case BOOLEAN:
-          int intValue = DataValidationUtil.validateAndParseBoolean(value);
+          int intValue =
+              DataValidationUtil.validateAndParseBoolean(columnMetadata.getName(), value);
           value = intValue > 0;
           stats.addIntValue(BigInteger.valueOf(intValue));
           size = 1;
@@ -67,6 +68,7 @@ class ParquetValueParser {
         case INT32:
           int intVal =
               getInt32Value(
+                  columnMetadata.getName(),
                   value,
                   columnMetadata.getScale(),
                   Optional.ofNullable(columnMetadata.getPrecision()).orElse(0),
@@ -79,6 +81,7 @@ class ParquetValueParser {
         case INT64:
           long longValue =
               getInt64Value(
+                  columnMetadata.getName(),
                   value,
                   columnMetadata.getScale(),
                   Optional.ofNullable(columnMetadata.getPrecision()).orElse(0),
@@ -89,7 +92,8 @@ class ParquetValueParser {
           size = 8;
           break;
         case DOUBLE:
-          double doubleValue = DataValidationUtil.validateAndParseReal(value);
+          double doubleValue =
+              DataValidationUtil.validateAndParseReal(columnMetadata.getName(), value);
           value = doubleValue;
           stats.addRealValue(doubleValue);
           size = 8;
@@ -102,6 +106,7 @@ class ParquetValueParser {
         case FIXED_LEN_BYTE_ARRAY:
           BigInteger intRep =
               getSb16Value(
+                  columnMetadata.getName(),
                   value,
                   columnMetadata.getScale(),
                   Optional.ofNullable(columnMetadata.getPrecision()).orElse(0),
@@ -135,6 +140,7 @@ class ParquetValueParser {
    * @return parsed int32 value
    */
   private static int getInt32Value(
+      String columnName,
       Object value,
       @Nullable Integer scale,
       Integer precision,
@@ -143,14 +149,15 @@ class ParquetValueParser {
     int intVal;
     switch (logicalType) {
       case DATE:
-        intVal = DataValidationUtil.validateAndParseDate(value);
+        intVal = DataValidationUtil.validateAndParseDate(columnName, value);
         break;
       case TIME:
         Utils.assertNotNull("Unexpected null scale for TIME data type", scale);
-        intVal = DataValidationUtil.validateAndParseTime(value, scale).intValue();
+        intVal = DataValidationUtil.validateAndParseTime(columnName, value, scale).intValue();
         break;
       case FIXED:
-        BigDecimal bigDecimalValue = DataValidationUtil.validateAndParseBigDecimal(value);
+        BigDecimal bigDecimalValue =
+            DataValidationUtil.validateAndParseBigDecimal(columnName, value);
         bigDecimalValue = bigDecimalValue.setScale(scale, RoundingMode.HALF_UP);
         DataValidationUtil.checkValueInRange(bigDecimalValue, scale, precision);
         intVal = bigDecimalValue.intValue();
@@ -172,6 +179,7 @@ class ParquetValueParser {
    * @return parsed int64 value
    */
   private static long getInt64Value(
+      String columnName,
       Object value,
       int scale,
       int precision,
@@ -181,19 +189,20 @@ class ParquetValueParser {
     switch (logicalType) {
       case TIME:
         Utils.assertNotNull("Unexpected null scale for TIME data type", scale);
-        longValue = DataValidationUtil.validateAndParseTime(value, scale).longValue();
+        longValue = DataValidationUtil.validateAndParseTime(columnName, value, scale).longValue();
         break;
       case TIMESTAMP_LTZ:
       case TIMESTAMP_NTZ:
         boolean ignoreTimezone = logicalType == AbstractRowBuffer.ColumnLogicalType.TIMESTAMP_NTZ;
         longValue =
-            DataValidationUtil.validateAndParseTimestampNtzSb16(value, scale, ignoreTimezone)
+            DataValidationUtil.validateAndParseTimestampNtzSb16(
+                    columnName, value, scale, ignoreTimezone)
                 .getTimeInScale()
                 .longValue();
         break;
       case TIMESTAMP_TZ:
         longValue =
-            DataValidationUtil.validateAndParseTimestampTz(value, scale)
+            DataValidationUtil.validateAndParseTimestampTz(columnName, value, scale)
                 .getSfTimestamp()
                 .orElseThrow(
                     () ->
@@ -205,7 +214,8 @@ class ParquetValueParser {
                 .longValue();
         break;
       case FIXED:
-        BigDecimal bigDecimalValue = DataValidationUtil.validateAndParseBigDecimal(value);
+        BigDecimal bigDecimalValue =
+            DataValidationUtil.validateAndParseBigDecimal(columnName, value);
         bigDecimalValue = bigDecimalValue.setScale(scale, RoundingMode.HALF_UP);
         DataValidationUtil.checkValueInRange(bigDecimalValue, scale, precision);
         longValue = bigDecimalValue.longValue();
@@ -227,6 +237,7 @@ class ParquetValueParser {
    * @return parsed int64 value
    */
   private static BigInteger getSb16Value(
+      String columnName,
       Object value,
       int scale,
       int precision,
@@ -234,7 +245,7 @@ class ParquetValueParser {
       AbstractRowBuffer.ColumnPhysicalType physicalType) {
     switch (logicalType) {
       case TIMESTAMP_TZ:
-        return DataValidationUtil.validateAndParseTimestampTz(value, scale)
+        return DataValidationUtil.validateAndParseTimestampTz(columnName, value, scale)
             .getSfTimestamp()
             .orElseThrow(
                 () ->
@@ -246,10 +257,12 @@ class ParquetValueParser {
       case TIMESTAMP_LTZ:
       case TIMESTAMP_NTZ:
         boolean ignoreTimezone = logicalType == AbstractRowBuffer.ColumnLogicalType.TIMESTAMP_NTZ;
-        return DataValidationUtil.validateAndParseTimestampNtzSb16(value, scale, ignoreTimezone)
+        return DataValidationUtil.validateAndParseTimestampNtzSb16(
+                columnName, value, scale, ignoreTimezone)
             .getTimeInScale();
       case FIXED:
-        BigDecimal bigDecimalValue = DataValidationUtil.validateAndParseBigDecimal(value);
+        BigDecimal bigDecimalValue =
+            DataValidationUtil.validateAndParseBigDecimal(columnName, value);
         // explicitly match the BigDecimal input scale with the Snowflake data type scale
         bigDecimalValue = bigDecimalValue.setScale(scale, RoundingMode.HALF_UP);
         DataValidationUtil.checkValueInRange(bigDecimalValue, scale, precision);
@@ -292,13 +305,13 @@ class ParquetValueParser {
     if (logicalType.isObject()) {
       switch (logicalType) {
         case OBJECT:
-          str = DataValidationUtil.validateAndParseObject(value);
+          str = DataValidationUtil.validateAndParseObject(columnMetadata.getName(), value);
           break;
         case VARIANT:
-          str = DataValidationUtil.validateAndParseVariant(value);
+          str = DataValidationUtil.validateAndParseVariant(columnMetadata.getName(), value);
           break;
         case ARRAY:
-          str = DataValidationUtil.validateAndParseArray(value);
+          str = DataValidationUtil.validateAndParseArray(columnMetadata.getName(), value);
           break;
         default:
           throw new SFException(
@@ -308,14 +321,14 @@ class ParquetValueParser {
       String maxLengthString = columnMetadata.getLength().toString();
       byte[] bytes =
           DataValidationUtil.validateAndParseBinary(
-              value, Optional.of(maxLengthString).map(Integer::parseInt));
+              columnMetadata.getName(), value, Optional.of(maxLengthString).map(Integer::parseInt));
       str = new String(bytes, StandardCharsets.UTF_8);
       stats.addStrValue(str);
     } else {
       String maxLengthString = columnMetadata.getLength().toString();
       str =
           DataValidationUtil.validateAndParseString(
-              value, Optional.of(maxLengthString).map(Integer::parseInt));
+              columnMetadata.getName(), value, Optional.of(maxLengthString).map(Integer::parseInt));
       stats.addStrValue(str);
     }
     return str;
