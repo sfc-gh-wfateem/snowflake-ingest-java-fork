@@ -2,10 +2,14 @@ package net.snowflake.ingest.streaming.internal;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.util.Objects;
+import org.apache.commons.codec.binary.Hex;
 
 /** Audit register endpoint/FileColumnPropertyDTO property list. */
 class FileColumnProperties {
+  private static final int MAX_LOB_LEN = 32;
+
   private String minStrValue;
 
   private String maxStrValue;
@@ -61,12 +65,21 @@ class FileColumnProperties {
             : stats.getCurrentMaxRealValue());
     this.setMaxLength(stats.getCurrentMaxLength());
 
-    // Collated and non-collated strings are intentionally equal here as required by Snowflake
-    this.setMaxStrNonCollated(stats.getCurrentMaxColStrValue());
-    this.setMinStrNonCollated(stats.getCurrentMinColStrValue());
+    this.setMaxStrNonCollated(null);
+    this.setMinStrNonCollated(null);
 
-    this.setMaxStrValue(stats.getCurrentMaxColStrValue());
-    this.setMinStrValue(stats.getCurrentMinColStrValue());
+    // current hex-encoded min value, truncated down to 32 bytes
+    if (stats.getCurrentMinStrValue() != null) {
+      String truncatedAsHex = truncateBytesAsHex(stats.getCurrentMinStrValue(), false);
+      this.setMinStrValue(truncatedAsHex);
+    }
+
+    // current hex-encoded max value, truncated up to 32 bytes
+    if (stats.getCurrentMaxStrValue() != null) {
+      String truncatedAsHex = truncateBytesAsHex(stats.getCurrentMaxStrValue(), true);
+      this.setMaxStrValue(truncatedAsHex);
+    }
+
     this.setNullCount(stats.getCurrentNullCount());
     this.setDistinctValues(stats.getDistinctValues());
   }
@@ -237,5 +250,29 @@ class FileColumnProperties {
         distinctValues,
         nullCount,
         maxLength);
+  }
+
+  /** XP-compatible string truncation (FdnColDataContainer::Metrics::updateStrMinMax) */
+  static String truncateBytesAsHex(byte[] bytes, boolean truncateUp) {
+    if (bytes.length <= MAX_LOB_LEN) {
+      return Hex.encodeHexString(bytes);
+    }
+
+    // Round the least significant byte(s) up
+    if (truncateUp) {
+      int idx;
+      for (idx = MAX_LOB_LEN - 1; idx >= 0; idx--) {
+        // increment the current byte, if there was no overflow, we can stop
+        if (++bytes[idx] != 0) {
+          break;
+        }
+      }
+      // Whole prefix has overflown, return infinity
+      if (idx == -1) {
+        return "Z";
+      }
+    }
+
+    return Hex.encodeHexString(ByteBuffer.wrap(bytes, 0, MAX_LOB_LEN));
   }
 }

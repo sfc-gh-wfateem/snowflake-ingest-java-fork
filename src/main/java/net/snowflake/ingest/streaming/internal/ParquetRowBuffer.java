@@ -67,6 +67,7 @@ public class ParquetRowBuffer extends AbstractRowBuffer<ParquetChunkData> {
     // precision
     int id = 1;
     for (ColumnMetadata column : columns) {
+      validateNonNullableCollatedColumn(column);
       ParquetTypeGenerator.ParquetTypeInfo typeInfo =
           ParquetTypeGenerator.generateColumnParquetTypeInfo(column, id);
       parquetTypes.add(typeInfo.getParquetType());
