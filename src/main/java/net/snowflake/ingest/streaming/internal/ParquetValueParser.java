@@ -7,7 +7,6 @@ package net.snowflake.ingest.streaming.internal;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import javax.annotation.Nullable;
 import net.snowflake.ingest.utils.ErrorCode;
@@ -349,10 +348,7 @@ class ParquetValueParser {
     byte[] bytes =
         DataValidationUtil.validateAndParseBinary(
             columnMetadata.getName(), value, Optional.of(maxLengthString).map(Integer::parseInt));
-
-    String str = new String(bytes, StandardCharsets.UTF_8);
-    stats.addStrValue(str);
-
+    stats.addBinaryValue(bytes);
     return bytes;
   }
 }

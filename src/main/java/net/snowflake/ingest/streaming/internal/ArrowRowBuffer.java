@@ -7,7 +7,6 @@ package net.snowflake.ingest.streaming.internal;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -738,7 +737,7 @@ class ArrowRowBuffer extends AbstractRowBuffer<VectorSchemaRoot> {
                     value,
                     Optional.ofNullable(maxLengthString).map(Integer::parseInt));
             ((VarBinaryVector) vector).setSafe(curRowIndex, bytes);
-            stats.addStrValue(new String(bytes, StandardCharsets.UTF_8));
+            stats.addBinaryValue(bytes);
             rowBufferSize += bytes.length;
             break;
           case REAL:
