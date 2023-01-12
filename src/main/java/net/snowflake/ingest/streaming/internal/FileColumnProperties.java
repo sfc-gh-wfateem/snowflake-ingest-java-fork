@@ -1,14 +1,13 @@
 package net.snowflake.ingest.streaming.internal;
 
+import static net.snowflake.ingest.streaming.internal.BinaryStringUtils.truncateBytesAsHex;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigInteger;
-import java.nio.ByteBuffer;
 import java.util.Objects;
-import org.apache.commons.codec.binary.Hex;
 
 /** Audit register endpoint/FileColumnPropertyDTO property list. */
 class FileColumnProperties {
-  private static final int MAX_LOB_LEN = 32;
 
   private String minStrValue;
 
@@ -250,29 +249,5 @@ class FileColumnProperties {
         distinctValues,
         nullCount,
         maxLength);
-  }
-
-  /** XP-compatible string truncation (FdnColDataContainer::Metrics::updateStrMinMax) */
-  static String truncateBytesAsHex(byte[] bytes, boolean truncateUp) {
-    if (bytes.length <= MAX_LOB_LEN) {
-      return Hex.encodeHexString(bytes);
-    }
-
-    // Round the least significant byte(s) up
-    if (truncateUp) {
-      int idx;
-      for (idx = MAX_LOB_LEN - 1; idx >= 0; idx--) {
-        // increment the current byte, if there was no overflow, we can stop
-        if (++bytes[idx] != 0) {
-          break;
-        }
-      }
-      // Whole prefix has overflown, return infinity
-      if (idx == -1) {
-        return "Z";
-      }
-    }
-
-    return Hex.encodeHexString(ByteBuffer.wrap(bytes, 0, MAX_LOB_LEN));
   }
 }

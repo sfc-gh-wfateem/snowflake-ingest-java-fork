@@ -152,6 +152,7 @@ abstract class AbstractRowBuffer<T> implements RowBuffer<T> {
   // Names of non-nullable columns
   private final Set<String> nonNullableFieldNames;
 
+  // Contains internal (i.e. unquoted) names of collated columns
   private final Set<String> collatedColumnsInternalNames;
 
   // buffer's channel fully qualified name with database, schema and table

@@ -6,6 +6,7 @@ package net.snowflake.ingest.streaming.internal;
 
 import static net.snowflake.client.jdbc.internal.snowflake.common.core.SnowflakeDateTimeFormat.DATE;
 import static net.snowflake.client.jdbc.internal.snowflake.common.core.SnowflakeDateTimeFormat.TIMESTAMP;
+import static net.snowflake.ingest.streaming.internal.BinaryStringUtils.unicodeCharactersCount;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -436,7 +437,7 @@ class DataValidationUtil {
     // not exceed this value
     maxLengthOptional.ifPresent(
         maxAllowedCharacters -> {
-          int actualCharacters = output.codePointCount(0, output.length());
+          int actualCharacters = unicodeCharactersCount(output);
           if (actualCharacters > maxAllowedCharacters) {
             throw valueFormatNotAllowedException(
                 columnName,
